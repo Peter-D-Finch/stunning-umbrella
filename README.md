@@ -4,6 +4,12 @@ This is a hobby project that has two goals
 2) Building statistical tools to analyze the data collected
 
 Currently the program pulls data from Pancakeswap's "Prediction". I was curious to see if there was any correlation between which way people were betting the price would move and which way the price actually moved.
-![image](https://user-images.githubusercontent.com/71032947/151405376-ee42740b-6513-4b44-89f1-c67f59fd3e29.png)![image](https://user-images.githubusercontent.com/71032947/151405676-3f612c96-6973-4f60-8fd4-28d7ed8ae9db.png)
+![plot2](https://user-images.githubusercontent.com/71032947/151406204-8d59b281-9676-4833-b0ff-13d34930bb80.JPG)
+Fig. 1. A scatter plot of % price change in the X-Axis and Bear-Bull-Ratio on the Y-Axis (The ratio of currency bet on a bullish outcome to bearish)
+![plot1](https://user-images.githubusercontent.com/71032947/151406272-20bead78-2e79-4f58-ad5d-f02a7f01f699.JPG)
+Fig. 2. A Gaussian Distribution fitted to Fig. 1.
 
-A scatter plot of % price change in the X-Axis and Bear-Bull-Ratio on the Y-Axis (The ratio of currency bet on a bullish outcome to bearish)
+So far the project has been able to give me insights such as:
+  - The price movement direction matches the majority prediction ~57% of the time
+  - There is a relationship between unpredictability of the price direction and the amount of liquidity
+  - There is a relationship between volume and time of day
