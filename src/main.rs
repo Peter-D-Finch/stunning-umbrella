@@ -293,16 +293,16 @@ mod stats_plot {
 		let c = minmax_scale(&distribution(&x, &y));
 		let points = &make_points(&a, &b)[..];
 		let points2 = &make_points(&a, &c)[..];
-		println!("-----------------------------------------------------------------------------------------------------");
-		Chart::new(180,120,-0.1,1.1)
+		println!("--------------------------------------------------------------------------------");
+		Chart::new(150,80,-0.1,1.1)
 			.lineplot(&Shape::Points(points))
 			.lineplot(&Shape::Points(points2))
 			.display();
-		println!("-----------------------------------------------------------------------------------------------------");
+		println!("--------------------------------------------------------------------------------");
 	}
 	pub fn plot_timeseries(q: &Vec<f64>) {
 		println!("-----------------------------------------------------------------------------------------------------");
-		Chart::new(180,60,1.0,q.len() as f32).lineplot(&Shape::Continuous(Box::new(|x| q[(x as usize)%q.len()] as f32))).display();
+		Chart::new(120,60,1.0,q.len() as f32).lineplot(&Shape::Continuous(Box::new(|x| q[(x as usize)%q.len()] as f32))).display();
 		println!("-----------------------------------------------------------------------------------------------------");
 	}
 	fn make_points(a: &Vec<f64>, b: &Vec<f64>) -> Vec<(f32, f32)> {
@@ -315,15 +315,28 @@ mod stats_plot {
 	}
 }
 mod markov_chain {
+	/*
+	A module that implements a generic Markov Chain model.
+	*/
 	#![allow(dead_code)]
 	use crate::stats::*;
-	pub fn to_state_system(data: Vec<Vec<f64>>, dimensions: i64) -> Vec<Vec<f64>> {
+	/*
+	A function to convert any data in tabular form (2-D Vector) to a state-
+	based system. A 2-D vector and number of states for each dimension is
+	passed as arguments. Each value is rounded to an integer between
+	0 and the number of states.
+	
+	@param data a 2-D Vector that contains the data
+	@param states the number of states each dimension will have
+	@return the resulting state-based system
+	*/
+	pub fn to_state_system(data: Vec<Vec<f64>>, states: i64) -> Vec<Vec<f64>> {
 		let mut result: Vec<Vec<f64>> = Vec::new();
 		for i in data.iter() {
 			let mut temp: Vec<f64> = minmax_scale(&i);
 			let mut _temp_int: Vec<i64> = Vec::new();
 			for j in 0..temp.len() {
-				temp[j] = temp[j] / (1.0/(dimensions as f64));
+				temp[j] = temp[j] / (1.0/(states as f64));
 				temp[j] = temp[j].floor();
 				_temp_int.push(temp[j] as i64);
 			}
@@ -331,7 +344,16 @@ mod markov_chain {
 		}
 		return result;
 	}
-	pub fn binary_convert(data: &Vec<f64>, states: i64) -> Vec<f64> {
+	
+	/*
+	A function that converts a timeseries vector or states into either a 0 or 1
+	based on whether it is above or below the median.
+	
+	@param data The vector of states
+	@param states The number of states in the data parameter
+	@return vector of 0s and 1s
+	*/
+	pub fn up_down(data: &Vec<f64>, states: i64) -> Vec<f64> {
 		let mut result: Vec<f64> = Vec::new();
 		for i in data.iter() {
 			if i > &((states / 2) as f64) {
@@ -343,6 +365,10 @@ mod markov_chain {
 		}
 		return result;
 	}
+	
+	/*
+	
+	*/
 	pub fn and_gate(a: &Vec<f64>, b: &Vec<f64>) -> Vec<f64> {
 		assert!(a.len() == b.len());
 		let mut result: Vec<f64> = Vec::new();
@@ -358,21 +384,24 @@ mod markov_chain {
 	}
 }
 mod technical_analysis {
-	
+	/*
+	A module that implements classical technical indicators from financial
+	literature.
+	*/
 }
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	
 	let dimensions = 50;
-	let num_data = 1000;
+	let num_data = 600;
 	
 	let raw_data = join!(historical_rounds(num_data)).0.unwrap();
 	let a: Vec<f64> = remove_outliers(get_change_vec(raw_data.clone()), 4.0, 30);
 	let b: Vec<f64> = remove_outliers(get_bbr_vec(&raw_data), 4.0, 30);
 	let mut data: Vec<Vec<f64>> = vec![a.clone(), b.clone()];
 	data = to_state_system(data, dimensions);
-	data[0] = binary_convert(&data[0], dimensions);
-	data[1] = binary_convert(&data[1], dimensions);
+	data[0] = up_down(&data[0], dimensions);
+	data[1] = up_down(&data[1], dimensions);
 	plot_scat_dist(&a, &b);
 	println!("avg: {0}", mean(&and_gate(&data[0], &data[1])));
 	Ok(())
