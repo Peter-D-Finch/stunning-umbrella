@@ -1,7 +1,7 @@
 use crate::prediction_v2::*;
 use crate::stats_plot::*;
 use crate::stats::*;
-use crate::state_system::*;
+use crate::markov_chain::*;
 use futures::join;
 
 mod prediction_v2 {
@@ -278,12 +278,26 @@ mod stats_plot {
 	#![allow(dead_code)]
 	use textplots::{Chart, Shape, Plot};
 	use crate::stats::minmax_scale;
+	use crate::stats::distribution;
 	pub fn plot_scatter(x: &Vec<f64>, y: &Vec<f64>) {
 		let a = minmax_scale(&x);
 		let b = minmax_scale(&y);
-		let points = &make_points(a, b)[..];
+		let points = &make_points(&a, &b)[..];
 		println!("-----------------------------------------------------------------------------------------------------");
 		Chart::new(180,120,-0.1,1.1).lineplot(&Shape::Points(points)).display();
+		println!("-----------------------------------------------------------------------------------------------------");
+	}
+	pub fn plot_scat_dist(x: &Vec<f64>, y: &Vec<f64>) {
+		let a = minmax_scale(&x);
+		let b = minmax_scale(&y);
+		let c = minmax_scale(&distribution(&x, &y));
+		let points = &make_points(&a, &b)[..];
+		let points2 = &make_points(&a, &c)[..];
+		println!("-----------------------------------------------------------------------------------------------------");
+		Chart::new(180,120,-0.1,1.1)
+			.lineplot(&Shape::Points(points))
+			.lineplot(&Shape::Points(points2))
+			.display();
 		println!("-----------------------------------------------------------------------------------------------------");
 	}
 	pub fn plot_timeseries(q: &Vec<f64>) {
@@ -291,7 +305,7 @@ mod stats_plot {
 		Chart::new(180,60,1.0,q.len() as f32).lineplot(&Shape::Continuous(Box::new(|x| q[(x as usize)%q.len()] as f32))).display();
 		println!("-----------------------------------------------------------------------------------------------------");
 	}
-	fn make_points(a: Vec<f64>, b: Vec<f64>) -> Vec<(f32, f32)> {
+	fn make_points(a: &Vec<f64>, b: &Vec<f64>) -> Vec<(f32, f32)> {
 		assert!(a.len() == b.len());
 		let mut result: Vec<(f32, f32)> = Vec::new();
 		for i in 0..a.len() {
@@ -300,7 +314,7 @@ mod stats_plot {
 		return result;
 	}
 }
-mod state_system {
+mod markov_chain {
 	#![allow(dead_code)]
 	use crate::stats::*;
 	pub fn to_state_system(data: Vec<Vec<f64>>, dimensions: i64) -> Vec<Vec<f64>> {
@@ -348,16 +362,18 @@ mod technical_analysis {
 }
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-	let data = join!(historical_rounds(1000)).0.unwrap();
-	let a: Vec<f64> = remove_outliers(get_change_vec(data.clone()), 4.0, 30);
-	let b: Vec<f64> = remove_outliers(get_bbr_vec(&data), 4.0, 30);
-	let c: Vec<f64> = remove_outliers(get_pool_vec(&data), 4.0, 30);
-	let d: Vec<Vec<f64>> = vec![a.clone(), b.clone()];
-	let e = to_state_system(d, 50);
-	let f = binary_convert(&e[0], 50);
-	let g = binary_convert(&e[1], 50);
-	let h = and_gate(&f, &g);
-	println!("avg: {0}", mean(&h));
-	println!("correlation: {0}", pearson(&h, &c));
+	
+	let dimensions = 50;
+	let num_data = 1000;
+	
+	let raw_data = join!(historical_rounds(num_data)).0.unwrap();
+	let a: Vec<f64> = remove_outliers(get_change_vec(raw_data.clone()), 4.0, 30);
+	let b: Vec<f64> = remove_outliers(get_bbr_vec(&raw_data), 4.0, 30);
+	let mut data: Vec<Vec<f64>> = vec![a.clone(), b.clone()];
+	data = to_state_system(data, dimensions);
+	data[0] = binary_convert(&data[0], dimensions);
+	data[1] = binary_convert(&data[1], dimensions);
+	plot_scat_dist(&a, &b);
+	println!("avg: {0}", mean(&and_gate(&data[0], &data[1])));
 	Ok(())
 }
