@@ -1,7 +1,10 @@
+// https://fsymbols.com/generators/carty/
 use crate::prediction_v2::*;
-use crate::stats_plot::*;
+
 use crate::stats::*;
 use crate::markov_chain::*;
+use crate::technical_analysis::*;
+use crate::data_mining::*;
 use futures::join;
 
 mod prediction_v2 {
@@ -46,7 +49,12 @@ mod prediction_v2 {
 		let epoch_now: u64 = contract.query("currentEpoch", (), None, Options::default(), None).await.unwrap();
 		let epoch_prev: u64 = epoch_now - 1;
 		for i in 0..lookback {
-			let round: (u64, u64, u64, u64, i64, i64, u64, u64, u64, u64, u64, u64, u64, bool) = contract.query("rounds", (epoch_prev-lookback+i,), None, Options::default(), None).await.unwrap();
+			let round: (u64, u64, u64, u64, i64, i64, u64, u64, u64, u64, u64, u64, u64, bool) =
+				contract.query("rounds",
+							(epoch_prev-lookback+i,),
+							None,
+							Options::default(),
+							None).await.unwrap();
 			let pc: f64 = (round.4 as f64) - (round.5 as f64);
 			let bb: f64 = (round.9 as f64) / (round.10 as f64);
 			let result: Prediction = Prediction {
@@ -69,14 +77,14 @@ mod prediction_v2 {
 		}
 		return result;
 	}
-	pub fn get_close_vec(data: Vec<Prediction>) -> Vec<f64> {
+	pub fn get_close_vec(data: &Vec<Prediction>) -> Vec<f64> {
 		let mut result = Vec::new();
 		for i in 0..data.len() {
 			result.push(data[i].close_price);
 		}
 		return result;
 	}
-	pub fn get_change_vec(data: Vec<Prediction>) -> Vec<f64> {
+	pub fn get_change_vec(data: &Vec<Prediction>) -> Vec<f64> {
 		let mut result = Vec::new();
 		for i in 0..data.len() {
 			result.push(data[i].price_change);
@@ -87,6 +95,13 @@ mod prediction_v2 {
 		let mut result = Vec::new();
 		for i in 0..data.len() {
 			result.push(data[i].pool_amount);
+		}
+		return result;
+	}
+	pub fn get_open_vec(data: &Vec<Prediction>) -> Vec<f64> {
+		let mut result = Vec::new();
+		for i in 0..data.len() {
+			result.push(data[i].lock_price);
 		}
 		return result;
 	}
@@ -159,7 +174,7 @@ mod stats {
 		let avg = sum / (data.len() as f64);
 		return avg;
 	}
-	pub fn covariance(a: Vec<f64>, b: Vec<f64>) -> f64 {
+	pub fn covariance(a: &Vec<f64>, b: &Vec<f64>) -> f64 {
 		assert!(a.len() == b.len());
 		let a_avg = mean(&a);
 		let b_avg = mean(&b);
@@ -170,7 +185,7 @@ mod stats {
 		let covariance = sum / (a.len() as f64);
 		return covariance;
 	}
-	pub fn st_dev(data: Vec<f64>) -> f64 {
+	pub fn st_dev(data: &Vec<f64>) -> f64 {
 		let avg = mean(&data);
 		let mut diff: Vec<f64> = Vec::new();
 		for i in 0..data.len() {
@@ -182,9 +197,9 @@ mod stats {
 	}
 	pub fn pearson(a: &Vec<f64>, b: &Vec<f64>) -> f64{
 		assert!(a.len() == b.len());
-		let cov = covariance(a.clone(), b.clone());
-		let a_stdev = st_dev(a.clone());
-		let b_stdev = st_dev(b.clone());
+		let cov = covariance(&a, &b);
+		let a_stdev = st_dev(&a);
+		let b_stdev = st_dev(&b);
 		let correl = cov / (a_stdev * b_stdev);
 		return correl;
 	}
@@ -193,7 +208,7 @@ mod stats {
 	}
 	pub fn z_score_vec(data: Vec<f64>) -> Vec<f64> {
 		let avg = mean(&data);
-		let stdev = st_dev(data.clone());
+		let stdev = st_dev(&data);
 		let mut result = Vec::new();
 		for i in 0..data.len() {
 			result.push(z_score(data[i], avg, stdev));
@@ -203,7 +218,7 @@ mod stats {
 	pub fn remove_outliers(data: Vec<f64>, n: f64, iter: i64) -> Vec<f64> {
 		let mut result: Vec<f64> = Vec::new();
 		let z_scores = z_score_vec(data.clone());
-		let stdev = st_dev(data.clone());
+		let stdev = st_dev(&data);
 		let avg = mean(&data);
 		for i in 0..z_scores.len() {
 			if z_scores[i] > n {
@@ -218,7 +233,7 @@ mod stats {
 		}
 		for _j in 0..iter {
 			let z_scores_adj = z_score_vec(result.clone());
-			let stdev_adj = st_dev(result.clone());
+			let stdev_adj = st_dev(&result);
 			let avg_adj = mean(&result);
 			for i in 0..z_scores_adj.len() {
 				if z_scores_adj[i] > n {
@@ -279,13 +294,14 @@ mod stats_plot {
 	use textplots::{Chart, Shape, Plot};
 	use crate::stats::minmax_scale;
 	use crate::stats::distribution;
+	
 	pub fn plot_scatter(x: &Vec<f64>, y: &Vec<f64>) {
 		let a = minmax_scale(&x);
 		let b = minmax_scale(&y);
 		let points = &make_points(&a, &b)[..];
-		println!("-----------------------------------------------------------------------------------------------------");
-		Chart::new(180,120,-0.1,1.1).lineplot(&Shape::Points(points)).display();
-		println!("-----------------------------------------------------------------------------------------------------");
+		println!("--------------------------------------------------------------------------------");
+		Chart::new(150,80,-0.1,1.1).lineplot(&Shape::Points(points)).display();
+		println!("--------------------------------------------------------------------------------");
 	}
 	pub fn plot_scat_dist(x: &Vec<f64>, y: &Vec<f64>) {
 		let a = minmax_scale(&x);
@@ -330,7 +346,7 @@ mod markov_chain {
 	@param states the number of states each dimension will have
 	@return the resulting state-based system
 	*/
-	pub fn to_state_system(data: Vec<Vec<f64>>, states: i64) -> Vec<Vec<f64>> {
+	pub fn to_state_system(data: Vec<Vec<f64>>, states: usize) -> Vec<Vec<f64>> {
 		let mut result: Vec<Vec<f64>> = Vec::new();
 		for i in data.iter() {
 			let mut temp: Vec<f64> = minmax_scale(&i);
@@ -353,15 +369,28 @@ mod markov_chain {
 	@param states The number of states in the data parameter
 	@return vector of 0s and 1s
 	*/
-	pub fn up_down(data: &Vec<f64>, states: i64) -> Vec<f64> {
+	pub fn up_down(data: &Vec<f64>, states: usize) -> Vec<f64> {
 		let mut result: Vec<f64> = Vec::new();
 		for i in data.iter() {
-			if i > &((states / 2) as f64) {
-				result.push(1.0);
-			}
-			else {
-				result.push(0.0);
-			}
+			if i > &((states / 2) as f64) { result.push(1.0); }
+			else { result.push(0.0); }
+		}
+		return result;
+	}
+	
+	/*
+	A function that converts a timeseries vector or states into either a 0 or 1
+	based on whether it is above or below zero.
+	
+	@param data The vector of states
+	@param states The number of states in the data parameter
+	@return vector of 0s and 1s
+	*/
+	pub fn ud_fuzzy(data: &Vec<f64>, median: f64) -> Vec<f64> {
+		let mut result: Vec<f64> = Vec::new();
+		for i in data.iter() {
+			if i > &median { result.push(1.0); }
+			else { result.push(0.0); }
 		}
 		return result;
 	}
@@ -384,25 +413,267 @@ mod markov_chain {
 	}
 }
 mod technical_analysis {
+	#![allow(dead_code)]
 	/*
-	A module that implements classical technical indicators from financial
-	literature.
+	A module that implements classical technical indicators from finance.
 	*/
+	use crate::stats::*;
+	
+
+//▀█▀ █▀█ █▀▀ █▄░█ █▀▄
+//░█░ █▀▄ ██▄ █░▀█ █▄▀
+	/* */
+	pub fn moving_avg(data: &Vec<f64>, len: usize) -> Vec<f64> {
+		let mut result: Vec<f64> = Vec::new();
+		for i in 0..data.len() {
+			if i < len { result.push(mean(&data[0..i].to_vec())); }
+			else {
+				let temp: Vec<f64> = data[i-len .. i].to_vec();
+				result.push(mean(&temp));
+			}
+		}
+		return result;
+	}
+	
+	/* */
+	pub fn exp_moving_avg(data: &Vec<f64>, len: usize) -> Vec<f64> {
+		let mut result: Vec<f64> = Vec::new();
+		for i in 0..data.len() {
+			if i < len {
+				if i == 0 { result.push(data[0]); }
+				else { result.push(mean(&data[0..i].to_vec())); }
+			}
+			else {
+				result.push( (data[i]*(2.0/(1.0+(len as f64)))) + (result[i-1]*(1.0-(2.0/(1.0+(len as f64))))) );
+			}
+		}
+		return result;
+	}
+	
+
+//█▀█ █▀ █▀▀ █ █░░ █░░ ▄▀█ ▀█▀ █▀█ █▀█ █▀
+//█▄█ ▄█ █▄▄ █ █▄▄ █▄▄ █▀█ ░█░ █▄█ █▀▄ ▄█
+	/* */
+	pub fn macd(data: &Vec<f64>, len1: usize, len2: usize) -> Vec<f64> {
+		let mut result: Vec<f64> = Vec::new();
+		let ma1 = exp_moving_avg(&data, len1);
+		let ma2 = exp_moving_avg(&data, len2);
+		for i in 0..data.len() {
+			result.push(ma1[i] - ma2[i]);
+		}
+		return result;
+	}
+	
+
+//█░█ █▀█ █░░ ▄▀█ ▀█▀ █ █░░ █ ▀█▀ █▄█
+//▀▄▀ █▄█ █▄▄ █▀█ ░█░ █ █▄▄ █ ░█░ ░█░
+
+
+}
+mod data_mining {
+	#![allow(dead_code)]
+	use crate::stats::*;
+	use colour::*;
+	
+	
+	//█▀▀ █░█ █▄░█ █▀▀ ▀█▀ █ █▀█ █▄░█ █▀
+	//█▀░ █▄█ █░▀█ █▄▄ ░█░ █ █▄█ █░▀█ ▄█
+	/* */
+	fn sort_system(data_param: &Vec<Vec<f64>>, p: usize) -> Vec<Vec<f64>> {
+		let mut data = data_param.clone();
+		loop {
+			let mut swapped = false;
+			let mut i = 0;
+			while i < data[p].len() {
+				if i >= data[p].len()-1 { break; }
+				if data[p][i] > data[p][i+1] {
+					swapped = true;
+					for j in 0..data.len() {
+						let value = data[j][i];
+						data[j].remove(i);
+						data[j].insert(i+1, value);
+					}
+					break;
+				}
+				i += 1;
+			}
+			if !swapped { break; }
+		}
+
+		return data;
+	}
+	
+	
+	//█▀▄▀█ ▄▀█ ▀█▀ █▀█ █ █▀▀ █▀▀ █▀
+	//█░▀░█ █▀█ ░█░ █▀▄ █ █▄▄ ██▄ ▄█
+	/* */
+	pub fn c_matrix(dataframe: &Vec<Vec<f64>>) -> Vec<Vec<f64>>{
+		let mut result: Vec<Vec<f64>> = Vec::new();
+		for i in 0..dataframe.len() {
+			let mut temp: Vec<f64> = Vec::new();
+			for j in dataframe.iter() {
+				temp.push(pearson(&dataframe[i], &j));
+			}
+			result.push(temp);
+		}
+		return result;
+	}
+	
+	/* */
+	pub fn cov_matrix(dataframe: &Vec<Vec<f64>>) -> Vec<Vec<f64>>{
+		let mut result: Vec<Vec<f64>> = Vec::new();
+		for i in 0..dataframe.len() {
+			let mut temp: Vec<f64> = Vec::new();
+			for j in dataframe.iter() {
+				temp.push(covariance(&dataframe[i], &j));
+			}
+			result.push(temp);
+		}
+		return result;
+	}
+	
+	/* */
+	pub fn c_matrix_mean(dataframe: &Vec<Vec<f64>>, num: usize) -> Vec<Vec<f64>> {
+		let mut result: Vec<Vec<f64>> = Vec::new();
+		for j in 0..dataframe.len() {
+			let sort = sort_system(dataframe, j);
+			let mut avg_state: Vec<f64> = Vec::new();
+			for i in 0..sort.len() {
+				avg_state.push(mean(&sort[i][sort[i].len()-num-1..].to_vec()));
+			}
+			result.push(avg_state);
+		}
+		return result;
+	}
+	
+	/* */
+	pub fn c_matrix_stdev(dataframe: &Vec<Vec<f64>>, num: usize) -> Vec<Vec<f64>> {
+		let mut result: Vec<Vec<f64>> = Vec::new();
+		for j in 0..dataframe.len() {
+			let sort = sort_system(dataframe, j);
+			let mut avg_state: Vec<f64> = Vec::new();
+			for i in 0..sort.len() {
+				avg_state.push(st_dev(&sort[i][sort[i].len()-num-1..].to_vec()));
+			}
+			
+			result.push(avg_state);
+		}
+		return result;
+	}
+	
+	
+	//█▀▄ █ █▀ █▀█ █░░ ▄▀█ █▄█
+	//█▄▀ █ ▄█ █▀▀ █▄▄ █▀█ ░█░
+	/* */
+	pub fn print_cov_matrix(dataframe: &Vec<Vec<f64>>, names: &Vec<&str>) {
+		assert!(dataframe.len() == names.len());
+		let matrix = cov_matrix(dataframe);
+		print!("\t\t");
+		for i in names.iter() { print!("{0}\t\t", i); }
+		print!("\n");
+		for i in 0..names.len() {
+			white!("{0}\t\t", names[i]);
+			for j in matrix[i].iter() {
+				if j < &0.0 { red!("{0:.6}\t", j); }
+				else if j > &0.0 { green!("{0:.6}\t", j); }
+				
+			}
+			print!("\n");
+		}
+	}
+	
+	/* */
+	pub fn print_cor_matrix(dataframe: &Vec<Vec<f64>>, names: &Vec<&str>) {
+		assert!(dataframe.len() == names.len());
+		let matrix = c_matrix(dataframe);
+		print!("\t\t");
+		for i in names.iter() { print!("{0}\t\t", i); }
+		print!("\n");
+		for i in 0..names.len() {
+			white!("{0}\t\t", names[i]);
+			for j in matrix[i].iter() {
+				if j < &0.3 { white!("{0:.6}\t", j); }
+				else if j.abs() < (0.5 as f64) { red!("{0:.6}\t", j); }
+				else if j.abs() < (0.7 as f64) { yellow!("{0:.6}\t", j); }
+				else if j.abs() > (0.7 as f64) { green!("{0:.6}\t", j); }
+			}
+			print!("\n");
+		}
+	}
+	
+	/* */
+	pub fn print_c_matrix_mean(dataframe: &Vec<Vec<f64>>, names: &Vec<&str>, num: usize, dim: usize) {
+		assert!(dataframe.len() == names.len());
+		let matrix = c_matrix_mean(dataframe, num);
+		print!("\t\t");
+		for i in names.iter() { print!("Avg. {0}\t", i); }
+		print!("\n");
+		for i in 0..names.len() {
+			white!("Top[{0}] {1}\t", num, names[i]);
+			for j in 0..matrix[i].len() {
+				let temp = matrix[i][j]/(dim as f64);
+				if i == j { green!("[{0:.4}]\t", matrix[i][j]/(dim as f64)); }
+				else if temp < 0.25 { red!("[{0:.4}]\t", matrix[i][j]/(dim as f64)); }
+				else if temp > 0.75 { green!("[{0:.4}]\t", matrix[i][j]/(dim as f64)); }
+				else if temp > 0.625 { yellow!("[{0:.4}]\t", matrix[i][j]/(dim as f64)); }
+				else if temp < 0.375 { yellow!("[{0:.4}]\t", matrix[i][j]/(dim as f64)); }
+				else { white!("[{0:.4}]\t", matrix[i][j]/(dim as f64)); }
+			}
+			print!("\n");
+		}
+	}
+	
+	/* */
+	pub fn print_c_matrix_stdev(dataframe: &Vec<Vec<f64>>, names: &Vec<&str>, num: usize, dim: usize) {
+		assert!(dataframe.len() == names.len());
+		let matrix = c_matrix_stdev(dataframe, num);
+		print!("\t\t");
+		for i in names.iter() { print!("Avg. {0}\t", i); }
+		print!("\n");
+		for i in 0..names.len() {
+			white!("Top[{0}] {1}\t", num, names[i]);
+			for j in 0..matrix[i].len() {
+				if i == j { green!("[{0:.4}]\t", matrix[i][j]/(dim as f64)); }
+				else { white!("[{0:.4}]\t", matrix[i][j]/(dim as f64)); }
+			}
+			print!("\n");
+		}
+	}
+	
+	/* */
+	pub fn display_analysis(dataframe: &Vec<Vec<f64>>, names: &Vec<&str>, dim: usize) {
+		println!("\n\nCOVARIANCE MATRIX");
+		print_cov_matrix(dataframe, names);
+		println!("\n\nCORRELATION MATRIX");
+		print_cor_matrix(dataframe, names);
+		println!("\n\nAVERAGE STATE CLUSTER MATRIX");
+		print_c_matrix_mean(dataframe, names, 10, dim);
+		println!("\n\nSTDEV STATE CLUSTER MATRIX");
+		print_c_matrix_stdev(dataframe, names, 10, dim);
+		println!("\n\nEND");
+	}
 }
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	
-	let dimensions = 50;
-	let num_data = 600;
+	// Constants
+	let num_data = 1000;
+	let dimensions: usize = 50;
 	
+	// Collect Data
 	let raw_data = join!(historical_rounds(num_data)).0.unwrap();
-	let a: Vec<f64> = remove_outliers(get_change_vec(raw_data.clone()), 4.0, 30);
+	let a: Vec<f64> = remove_outliers(get_change_vec(&raw_data), 4.0, 30);
 	let b: Vec<f64> = remove_outliers(get_bbr_vec(&raw_data), 4.0, 30);
-	let mut data: Vec<Vec<f64>> = vec![a.clone(), b.clone()];
-	data = to_state_system(data, dimensions);
-	data[0] = up_down(&data[0], dimensions);
-	data[1] = up_down(&data[1], dimensions);
-	plot_scat_dist(&a, &b);
-	println!("avg: {0}", mean(&and_gate(&data[0], &data[1])));
+	let c: Vec<f64> = get_close_vec(&raw_data);
+	let d: Vec<f64> = macd(&get_open_vec(&raw_data), 16, 24);
+	let e: Vec<f64> = remove_outliers(get_pool_vec(&raw_data), 4.0, 30);
+	
+	// Functions
+	let mut data: Vec<Vec<f64>> = vec![a.clone(), b.clone(), c.clone(), d.clone(), e.clone()];
+	data = to_state_system(data, dimensions.clone());
+	
+	// Display
+	display_analysis(&data, &(vec!["%CHG", "B2BR", "CPRC", "MACD", "POOL"]), dimensions.clone());
+	
 	Ok(())
 }
